@@ -2,8 +2,9 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
 from nav_msgs.msg import Odometry
-from geometry_msgs.msg import Quaternion, Twist
+from geometry_msgs.msg import Quaternion, TransformStamped
 import math
+import tf2_ros
 
 class IMUtoOdometryNode(Node):
     def __init__(self):
@@ -22,6 +23,7 @@ class IMUtoOdometryNode(Node):
             10
         )
 
+        self.tf_broadcaster = tf2_ros.TransformBroadcaster(self) 
         self.last_time = self.get_clock().now()
         self.position = [0.0, 0.0, 0.0]
         self.velocity = [0.0, 0.0, 0.0]
@@ -38,7 +40,7 @@ class IMUtoOdometryNode(Node):
         
         self.velocity[0] += accel.x * dt
         self.velocity[1] += accel.y * dt
-        self.velocity[2] += accel.z * dt
+        self.velocity[2] += (accel.z - 9.80511) * dt
         
         self.position[0] += self.velocity[0] * dt
         self.position[1] += self.velocity[1] * dt
@@ -49,6 +51,7 @@ class IMUtoOdometryNode(Node):
         self.orientation[2] += ang_vel.z * dt
         
         odom = Odometry()
+
         odom.header.stamp = current_time.to_msg()
         odom.header.frame_id = 'odom'
 
@@ -65,6 +68,21 @@ class IMUtoOdometryNode(Node):
         odom.twist.twist.angular.z = ang_vel.z
         
         self.odom_publisher.publish(odom)
+
+        transform = TransformStamped()
+        transform.header.stamp = current_time.to_msg()
+        transform.header.frame_id = 'map'  # 'map' frame
+        transform.child_frame_id = 'odom'  # 'odom' frame
+        
+        transform.transform.translation.x = self.position[0]
+        transform.transform.translation.y = self.position[1]
+        transform.transform.translation.z = self.position[2]
+        transform.transform.rotation = odom.pose.pose.orientation
+        
+        self.tf_broadcaster.sendTransform(transform) 
+
+        self.last_time = self.get_clock().now()
+
 
     def euler_to_quaternion(self, roll, pitch, yaw):
         roll = math.radians(roll)
